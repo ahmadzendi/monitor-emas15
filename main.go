@@ -746,8 +746,178 @@ th.waktu,td.waktu{width:60px;min-width:50px;max-width:70px}
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://s3.tradingview.com/tv.js"></script>
 <script>
-/* ... (HTML JS sama persis dengan Python, tidak diubah) ... */
+(function(){
+var isDark=localStorage.getItem('theme')==='dark';
+var lastDataHash='';
+var messageQueue=[];
+var isProcessing=false;
+var latestHistory=[];
+var savedPriority=localStorage.getItem('profitPriority');
+var profitPriority=(savedPriority&&['jt20','jt30','jt40','jt50'].indexOf(savedPriority)!==-1)?savedPriority:'jt20';
+var headerLabels={'jt20':'Est. cuan 20 JT ➺ gr','jt30':'Est. cuan 30 JT ➺ gr','jt40':'Est. cuan 40 JT ➺ gr','jt50':'Est. cuan 50 JT ➺ gr'};
+function getOrderedProfitKeys(){
+var all=['jt20','jt30','jt40','jt50'];
+var result=[profitPriority];
+all.forEach(function(k){if(k!==profitPriority)result.push(k)});
+return result;
+}
+function updateTableHeaders(){
+var keys=getOrderedProfitKeys();
+$('#thP1').text(headerLabels[keys[0]]);
+$('#thP2').text(headerLabels[keys[1]]);
+$('#thP3').text(headerLabels[keys[2]]);
+$('#thP4').text(headerLabels[keys[3]]);
+}
+function createTradingViewWidget(){
+var wrapper=document.getElementById('tradingview_chart');
+var h=wrapper.offsetHeight||400;
+new TradingView.widget({width:"100%",height:h,symbol:"OANDA:XAUUSD",interval:"15",timezone:"Asia/Jakarta",theme:isDark?'dark':'light',style:"1",locale:"id",toolbar_bg:"#f1f3f6",enable_publishing:false,hide_top_toolbar:false,save_image:false,container_id:"tradingview_chart"});
+}
+var table=$('#tabel').DataTable({
+pageLength:4,
+lengthMenu:[4,8,18,48,88,888,1441],
+order:[],
+deferRender:true,
+dom:'<"dt-top-controls"lf>t<"bottom"p><"clear">',
+columns:[{data:"waktu"},{data:"transaction"},{data:"p1"},{data:"p2"},{data:"p3"},{data:"p4"}],
+language:{emptyTable:"Menunggu data harga emas dari Treasury...",zeroRecords:"Tidak ada data yang cocok",lengthMenu:"Lihat _MENU_",search:"Cari:",paginate:{first:"«",previous:"Kembali",next:"Lanjut",last:"»"}},
+initComplete:function(){
+var filterDiv=$('.dataTables_filter');
+var activeVal=profitPriority.replace('jt','');
+var profitBtns=$('<div class="profit-order-btns" id="profitOrderBtns"><button class="profit-btn'+(activeVal==='20'?' active':'')+'" data-val="20">20</button><button class="profit-btn'+(activeVal==='30'?' active':'')+'" data-val="30">30</button><button class="profit-btn'+(activeVal==='40'?' active':'')+'" data-val="40">40</button><button class="profit-btn'+(activeVal==='50'?' active':'')+'" data-val="50">50</button></div>');
+filterDiv.wrap('<div class="filter-wrap"></div>');
+filterDiv.before(profitBtns);
+$('#profitOrderBtns').on('click','.profit-btn',function(){
+var val=$(this).data('val');
+profitPriority='jt'+val;
+localStorage.setItem('profitPriority',profitPriority);
+$('#profitOrderBtns .profit-btn').removeClass('active');
+$(this).addClass('active');
+if(latestHistory.length){renderTable(true)}
+});
+updateTableHeaders();
+}
+});
+function hashData(h){
+if(!h||!h.length)return'';
+var f=h[0];
+return f.created_at+'|'+f.buying_rate+'|'+h.length;
+}
+function renderTable(forceRender){
+var h=latestHistory;
+if(!h||!h.length)return;
+var newHash=hashData(h);
+if(!forceRender&&newHash===lastDataHash)return;
+lastDataHash=newHash;
+h.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at)});
+var keys=getOrderedProfitKeys();
+updateTableHeaders();
+var arr=h.map(function(d){
+return{
+waktu:d.waktu_display,
+transaction:'<div class="transaksi"><span class="harga-beli">Harga Beli: '+d.buying_rate+'</span><span class="harga-jual"> Jual: '+d.selling_rate+'</span><span class="selisih">'+d.diff_display+'</span></div>',
+p1:d[keys[0]],
+p2:d[keys[1]],
+p3:d[keys[2]],
+p4:d[keys[3]]
+}
+});
+table.clear().rows.add(arr).draw(false);
+table.page('first').draw(false);
+}
+function updateTable(h){
+if(!h||!h.length)return;
+latestHistory=h;
+renderTable(false);
+}
+function updateUsd(h){
+var c=document.getElementById("currentPrice"),p=document.getElementById("priceList");
+if(!h||!h.length){c.textContent="Menunggu data...";c.className="loading-text";p.innerHTML='<li class="loading-text">Menunggu data...</li>';return}
+c.className="";
+function prs(s){return parseFloat(s.trim().replace(/\./g,'').replace(',','.'))}
+var r=h.slice().reverse();
+var icon="➖";
+if(r.length>1){var n=prs(r[0].price),pr=prs(r[1].price);icon=n>pr?"🚀":n<pr?"🔻":"➖"}
+c.innerHTML=r[0].price+" "+icon;
+var html='';
+for(var i=0;i<r.length;i++){
+var ic="➖";
+if(i===0&&r.length>1){var n=prs(r[0].price),pr=prs(r[1].price);ic=n>pr?"🟢":n<pr?"🔴":"➖"}
+else if(i<r.length-1){var n=prs(r[i].price),nx=prs(r[i+1].price);ic=n>nx?"🟢":n<nx?"🔴":"➖"}
+else if(r.length>1){var n=prs(r[i].price),pr=prs(r[i-1].price);ic=n<pr?"🔴":n>pr?"🟢":"➖"}
+html+='<li>'+r[i].price+' <span class="time">('+r[i].time+')</span> '+ic+'</li>';
+}
+p.innerHTML=html;
+}
+function updateInfo(i){document.getElementById("isiTreasury").innerHTML=i||"Belum ada info treasury."}
+function processMessage(d){
+if(d.ping)return;
+if(d.history)updateTable(d.history);
+if(d.usd_idr_history)updateUsd(d.usd_idr_history);
+if(d.treasury_info!==undefined)updateInfo(d.treasury_info);
+}
+function processQueue(){
+if(isProcessing||!messageQueue.length)return;
+isProcessing=true;
+var msg=messageQueue.shift();
+try{processMessage(msg)}catch(e){}
+isProcessing=false;
+if(messageQueue.length)requestAnimationFrame(processQueue);
+}
+var ws,ra=0,pingInterval;
+function conn(){
+var pr=location.protocol==="https:"?"wss:":"ws:";
+ws=new WebSocket(pr+"//"+location.host+"/ws");
+ws.binaryType='arraybuffer';
+ws.onopen=function(){
+ra=0;
+if(pingInterval)clearInterval(pingInterval);
+pingInterval=setInterval(function(){
+if(ws&&ws.readyState===1)try{ws.send('ping')}catch(e){}
+},25000);
+};
+ws.onmessage=function(e){
+try{
+var d;
+if(e.data instanceof ArrayBuffer){d=JSON.parse(new TextDecoder().decode(e.data))}
+else{d=JSON.parse(e.data)}
+messageQueue.push(d);
+requestAnimationFrame(processQueue);
+}catch(x){}
+};
+ws.onclose=function(){
+if(pingInterval)clearInterval(pingInterval);
+ra++;
+setTimeout(conn,Math.min(1000*Math.pow(1.3,ra-1),15000));
+};
+ws.onerror=function(){};
+}
+conn();
+function updateJam(){
+var n=new Date();
+var tgl=n.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+var jam=n.toLocaleTimeString('id-ID',{hour12:false});
+document.getElementById("jam").textContent=tgl+" "+jam+" WIB ";
+}
+setInterval(updateJam,1000);
+updateJam();
+window.toggleTheme=function(){
+var b=document.body,btn=document.getElementById('themeBtn');
+b.classList.toggle('dark-mode');
+isDark=b.classList.contains('dark-mode');
+btn.textContent=isDark?"☀️":"🌙";
+localStorage.setItem('theme',isDark?'dark':'light');
+document.getElementById('tradingview_chart').innerHTML='';
+createTradingViewWidget();
+};
+if(localStorage.getItem('theme')==='dark'){
+document.body.classList.add('dark-mode');
+document.getElementById('themeBtn').textContent="☀️";
+}
+setTimeout(createTradingViewWidget,100);
+})();
 </script>
 </body>
 </html>`
+
 
