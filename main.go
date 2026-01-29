@@ -849,12 +849,14 @@ html+='<li>'+r[i].price+' <span class="time">('+r[i].time+')</span> '+ic+'</li>'
 }
 p.innerHTML=html;
 }
-function updateInfo(i){document.getElementById("isiTreasury").innerHTML=i||"Belum ada info treasury."}
+function updateLimit(val){
+document.getElementById('limitBulan').textContent=val;
+}
 function processMessage(d){
 if(d.ping)return;
 if(d.history)updateTable(d.history);
 if(d.usd_idr_history)updateUsd(d.usd_idr_history);
-if(d.treasury_info!==undefined)updateInfo(d.treasury_info);
+if(d.limit_bulan!==undefined)updateLimit(d.limit_bulan);
 }
 function processQueue(){
 if(isProcessing||!messageQueue.length)return;
@@ -915,9 +917,17 @@ document.body.classList.add('dark-mode');
 document.getElementById('themeBtn').textContent="☀️";
 }
 setTimeout(createTradingViewWidget,100);
+
+// Tambahkan ini agar update langsung setelah POST aturTS sukses
+window.aturTS = function(val, key) {
+  fetch('/aturTS/' + val + '?key=' + encodeURIComponent(key))
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.limit_bulan !== undefined) updateLimit(d.limit_bulan);
+      // Notifikasi atau alert bisa ditambah di sini jika mau
+    });
+};
 })();
 </script>
 </body>
 </html>`
-
-
