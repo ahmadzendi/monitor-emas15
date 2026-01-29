@@ -109,7 +109,7 @@ func main() {
 		DisableStartupMessage: true,
 		Prefork:               false,
 	})
-	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed, MinLength: 500}))
+	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
 	app.Get("/", func(c *fiber.Ctx) error {
 		c.Set("Content-Type", "text/html; charset=utf-8")
 		return c.SendString(htmlTemplate)
@@ -750,3 +750,4 @@ th.waktu,td.waktu{width:60px;min-width:50px;max-width:70px}
 </script>
 </body>
 </html>`
+
